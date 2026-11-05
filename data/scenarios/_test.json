@@ -1,0 +1,90 @@
+{
+  "id": "_test",
+  "title": "Тестовая комната",
+  "genre": "тест",
+  "teaser": "Служебный сценарий для проверки механик движка.",
+  "order": 0,
+  "stats": {
+    "здоровье": {"value": 5, "max": 5, "zero_ending": "end_dead"},
+    "удача": {"value": 5, "max": 10, "hidden": true},
+    "заряд": {"value": 3, "max": 3, "kind": "resource", "format": "{v}%"}
+  },
+  "start_items": ["key", "lamp", "note"],
+  "characters": {"echo": {"name": "Эхо", "description": "Голос в стенах, который помнит твои поступки."}},
+  "items": {
+    "key": {"name": "латунный ключ", "aliases": ["ключ", "латунный"], "description": "Маленький ключ, тёплый на ощупь."},
+    "lamp": {"name": "лампа", "aliases": ["фонарь", "светильник"], "description": "Лампа на батарейках. Заряд: {stat:заряд}.",
+             "use": {"if": {"stat_gte": {"заряд": 1}}, "text": "Ты щёлкаешь лампой. Свет дрожит.", "effects": [{"stat": {"заряд": -1}}],
+                     "else_text": "Лампа мертва."}},
+    "note": {"name": "записка", "aliases": ["бумажка", "листок"], "description": "На записке нарисована птица.",
+             "examine_secret": {"if_flag": "видел_знак", "text": "Под птицей проступает слово: АВРОРА.", "effects": [{"set_flag": "знает_пароль"}]}},
+    "coin": {"name": "монета", "aliases": ["монетка", "серебро"], "description": "Монета с дырочкой.", "short": "Монета с дырочкой."}
+  },
+  "timers": [
+    {"id": "bell", "every": 4, "max": 3, "texts": ["Где-то бьёт колокол.", "Колокол ближе.", "Колокол оглушает тебя."], "goto": "bell_hall"}
+  ],
+  "start": "hall",
+  "nodes": {
+    "hall": {
+      "text": [{"if": {"revisit": true}, "text": "Снова зал. Заряд лампы {stat:заряд}."}, {"text": "Ты в пустом зале. На стене что-то нацарапано."}],
+      "extra": [{"if": {"has_item": "coin"}, "text": "Монета в кармане приятно тяжелит."}],
+      "on_first_enter": [{"journal": "Ты очнулся в зале."}],
+      "on_enter": [{"set_flag": "был_в_зале"}],
+      "examine": {"стена": {"aliases": ["надпись", "стену"], "text": "На стене нацарапана птица.", "effects": [{"set_flag": "видел_знак"}]}},
+      "item_uses": {"lamp": {"if": {"stat_gte": {"заряд": 1}}, "text": "Свет выхватывает тёмный угол.", "effects": [{"stat": {"заряд": -1}}], "goto": "dark_corner"}},
+      "choices": [
+        {"text": "Поднять монету", "once": true, "effects": [{"give_item": "coin"}, {"stat": {"удача": 1}}]},
+        {"text": "Пойти в коридор", "goto": "corridor"},
+        {"text": "Открыть сундук ключом", "if": {"has_item": "key"}, "goto": "chest"},
+        {"text": "Шагнуть в люк", "goto": "trap"}
+      ]
+    },
+    "corridor": {
+      "text": "Коридор обрывается провалом.",
+      "choices": [
+        {"text": "Прыгнуть", "check": {"stat": "здоровье", "dc": 10, "bonus": [{"if": {"has_item": "coin"}, "value": 2}]}, "success": "bridge", "fail": "pit", "fail_text": "Ты не допрыгиваешь."},
+        {"text": "Вернуться", "goto": "hall"}
+      ]
+    },
+    "pit": {
+      "text": "Ты на дне ямы. Больно.",
+      "on_enter": [{"stat": {"здоровье": -2}}],
+      "choices": [{"text": "Выбраться", "goto": "corridor"}]
+    },
+    "bridge": {
+      "text": "За провалом дверь с кодовым замком.",
+      "choices": [{"text": "Подойти к замку", "goto": "lock_room"}, {"text": "Назад", "goto": "corridor"}]
+    },
+    "lock_room": {
+      "text": "Замок ждёт слова.",
+      "input": {"prompt": "Введи пароль", "answers": [{"match": ["аврора", "aurora"], "text": "Щёлк!", "goto": "vault"}],
+                "attempts": 3, "wrong_text": ["Нет.", "Снова нет.", "Замок блокируется."], "on_fail": "hall"},
+      "choices": [{"text": "Отойти", "goto": "bridge"}]
+    },
+    "chest": {
+      "text": "В сундуке пусто, только эхо.",
+      "extra": [{"if": {"has_item": "coin"}, "text": "Эхо шепчет: «Ты взял монету»."}],
+      "choices": [{"text": "Отдать ключ эху", "effects": [{"take_item": "key"}, {"stat": {"удача": 2}}], "goto": "hall"}, {"text": "Закрыть", "goto": "hall"}]
+    },
+    "dark_corner": {
+      "text": "В углу дверца.",
+      "secret": true,
+      "choices": [{"text": "Пролезть", "if": {"flag": "знает_пароль"}, "goto": "end_secret"}, {"text": "Назад", "goto": "hall"}]
+    },
+    "vault": {"router": [{"if": {"stat_gte": {"удача": 7}}, "goto": "end_good"}, {"goto": "end_bad"}]},
+    "bell_hall": {
+      "text": "Колокол замолкает. Перед тобой две двери.",
+      "choices": [{"text": "Левая", "goto": "hall"}, {"text": "Правая", "goto": "end_bad"}]
+    },
+    "trap": {
+      "text": "Люк ведёт в шахту.",
+      "choices": [{"text": "Прыгнуть вниз", "effects": [{"stat": {"здоровье": -10}}], "goto": "hall"}, {"text": "Отступить", "goto": "hall"}]
+    }
+  },
+  "endings": {
+    "end_good": {"title": "Удача", "type": "good", "text": "Ты везунчик."},
+    "end_bad": {"title": "Неудача", "type": "bad", "text": "Ничего не вышло."},
+    "end_secret": {"title": "Тайный ход", "type": "secret", "secret": true, "text": "Ты нашёл тайный ход."},
+    "end_dead": {"title": "Конец", "type": "death", "text": "Ты погиб."}
+  }
+}
