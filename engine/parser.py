@@ -18,6 +18,7 @@ COMMANDS: dict[str, list[str]] = {
     "load": ["загрузить", "загр", "загрузиться", "load"],
     "help": ["помощь", "справка", "команды", "help", "?", "п"],
     "exit": ["выход", "выйти", "quit", "exit", "меню"],
+    "hint": ["подсказка", "подскажи", "хинт", "hint", "что делать"],
     "undo": ["отменить", "отмена", "отменить ход", "откат", "undo"],
     "look": ["осмотреться", "оглядеться", "смотреть", "описание", "где", "л"],
 }
@@ -141,6 +142,8 @@ def parse(line: str, *, answer_mode: bool = False) -> Command:
     head, rest = parts[0], (parts[1] if len(parts) > 1 else "")
     if text in COMMANDS["undo"]:
         return Command("undo")
+    if text in COMMANDS["hint"]:
+        return Command("hint")
     if not rest:
         kind = _match_command(head, COMMANDS)
         if kind:

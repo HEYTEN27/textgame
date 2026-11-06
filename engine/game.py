@@ -435,6 +435,32 @@ class Session:
         self._enter_msgs = []
         return [Msg("system", f"Последнее действие отменено. Можно отменить ещё: {len(self.history)}.")]
 
+    def hint_msgs(self) -> list[Msg]:
+        """Ненавязчивая подсказка по текущей сцене."""
+        st, sc, node = self.state, self.scenario, self.node
+        out = [Msg("title", "Подсказка")]
+        fresh = []
+        for n, c in enumerate(self.available_choices(), 1):
+            targets = [c.get(k) for k in ("goto", "success", "fail") if c.get(k)]
+            if any(t not in sc.endings and st.visited.get(t, 0) == 0 for t in targets):
+                fresh.append(str(n))
+        if fresh:
+            out.append(Msg("plain", f"  Ещё не изведано: варианты {', '.join(fresh)}."))
+        objects = [oid for oid, o in (node.get("examine") or {}).items()
+                   if check(o.get("if"), st) and f"ex:{st.node}:{oid}" not in st.used_once]
+        if objects:
+            out.append(Msg("plain", "  Стоит присмотреться: " + ", ".join(objects) + " (команда «осмотреть»)."))
+        useful = [i for i, u in (node.get("item_uses") or {}).items()
+                  if st.has(i) and check(u.get("if"), st) and f"use:{st.node}:{i}" not in st.used_once]
+        if useful:
+            out.append(Msg("plain", "  Кажется, одна из твоих вещей здесь пригодится (команда «использовать»)."))
+        unread = [i for i in st.inventory if sc.items.get(i, {}).get("examine_secret")]
+        if unread and len(out) == 1:
+            out.append(Msg("plain", "  Осмотри свои вещи повнимательнее: у некоторых есть секреты."))
+        if len(out) == 1:
+            out.append(Msg("plain", "  Здесь ты, кажется, видел всё. Попробуй вернуться туда, где ещё не был."))
+        return out
+
     def hud_line(self, width: int = 80) -> str:
         sc, st = self.scenario, self.state
         parts = []
@@ -465,6 +491,8 @@ class Session:
         if k == "look":
             self.need_describe = True
             return Response([])
+        if k == "hint":
+            return Response(self.hint_msgs())
         if k == "examine":
             if not cmd.arg:
                 self.need_describe = True
@@ -505,6 +533,7 @@ HELP_TEXT = """Команды (работают всегда):
   использовать <предмет>   применить предмет в текущей сцене
   статус                   характеристики персонажа
   отменить                 отменить последнее действие (до 30 шагов назад)
+  подсказка                что ещё не изведано в этой сцене
   журнал                   хроника важных событий
   сохранить / загрузить    3 слота сохранения
   помощь                   эта справка

@@ -343,6 +343,15 @@ class TestNewFeatures(unittest.TestCase):
         s.handle("статус")
         self.assertEqual(len(s.history), 0)
 
+    def test_hint(self):
+        s = new_session()
+        texts = " ".join(m.text for m in s.handle("подсказка").msgs)
+        self.assertIn("Ещё не изведано", texts)
+        self.assertIn("стена", texts)
+        self.assertIn("пригодится", texts)
+        self.assertEqual(s.handle("подсказка").action, None)
+        self.assertEqual(len(s.history), 0, "подсказка не меняет состояние")
+
     def test_autosave(self):
         self.assertIsNone(self.store.autosave_summary())
         s = new_session()

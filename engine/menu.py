@@ -11,7 +11,7 @@ from .loader import ENDING_TYPE_NAMES, load_all
 from .save import VOLUME_STEPS, SaveError, Store
 
 GAME_TITLE = "Текстовые приключения"
-VERSION = "1.1"
+VERSION = "1.2"
 
 BANNER = r"""
   _____ _____ _  _____ _____    _   ___ _____ ___ _  _ _____ _   _ ___  ___
@@ -158,7 +158,7 @@ class App:
         if credit and self.settings.get("music", True) and self.music.available:
             d.show([Msg("system", f"Музыка: {credit}")])
         d.show([Msg("system", "Вводи номер варианта или команду. «помощь» - список команд, "
-                              "«отменить» - отменить последний ход.")])
+                              "«отменить» - отменить последний ход, «подсказка» - что ещё не изведано.")])
         d.pause("Enter - начать")
         d.clear()
 
