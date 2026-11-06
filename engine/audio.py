@@ -71,16 +71,25 @@ class _MciBackend(_Backend):
         self._send = winmm.mciSendStringW
         self._send.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint, ctypes.c_void_p]
         self._send.restype = ctypes.c_uint
+        self._err = winmm.mciGetErrorStringW
+        self._err.argtypes = [ctypes.c_uint, ctypes.c_wchar_p, ctypes.c_uint]
         self._open = False
+        self.last_error = ""
 
     def _cmd(self, command: str) -> tuple[int, str]:
         buf = self._ctypes.create_unicode_buffer(256)
-        code = self._send(command, buf, 255, None)
-        return int(code), buf.value
+        code = int(self._send(command, buf, 255, None))
+        if code:
+            msg = self._ctypes.create_unicode_buffer(256)
+            self._err(code, msg, 255)
+            self.last_error = f"{command.split()[0]}: {code} {msg.value}"
+        return code, buf.value
 
     def play(self, path: str, volume: int) -> bool:
         self.stop()
         code, _ = self._cmd(f'open "{path}" type mpegvideo alias {ALIAS}')
+        if code != 0:
+            code, _ = self._cmd(f'open "{path}" alias {ALIAS}')
         if code != 0:
             return False
         self._open = True
@@ -281,6 +290,7 @@ def diagnose() -> int:
 
         time.sleep(1.5)
         print("Состояние MCI:", b.status())
+        print("Последняя ошибка MCI:", b.last_error or "нет")
         code, _ = b._cmd(f"status {ALIAS} position")
         print("Позиция воспроизведения, мс:", b._cmd(f"status {ALIAS} position")[1], "код:", code)
     music.stop()
