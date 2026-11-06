@@ -1,0 +1,57 @@
+name: Сборка exe для Windows
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Зависимости
+        run: python -m pip install -r requirements.txt
+
+      - name: Тесты
+        run: python -m unittest discover -s tests
+
+      - name: Валидатор сценариев
+        run: python tools/validate.py
+
+      - name: Бот-тестировщик
+        run: python tools/autoplay.py -n 1000
+
+      - name: Сборка exe
+        run: pyinstaller --noconfirm --clean --onefile --console --name TextAdventure --add-data "data;data" main.py
+
+      - name: Проверка запуска exe
+        shell: pwsh
+        run: |
+          "5" | .\dist\TextAdventure.exe
+          if ($LASTEXITCODE -ne 0) { throw "exe завершился с кодом $LASTEXITCODE" }
+          if (-not (Test-Path .\dist\saves)) { throw "папка saves не создана рядом с exe" }
+          Remove-Item -Recurse -Force .\dist\saves
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TextAdventure-windows
+          path: dist/TextAdventure.exe
+
+      - name: Релиз
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: TextAdventure v1.0.${{ github.run_number }}
+          files: dist/TextAdventure.exe
+          body: |
+            Готовый exe для Windows 10/11. Скачайте TextAdventure.exe и запустите двойным щелчком.
+            Сохранения появятся в папке saves рядом с exe.
