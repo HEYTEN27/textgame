@@ -263,6 +263,11 @@ class Music:
 
 def diagnose() -> int:
     """Проверка звука: python -m engine.audio. Код 0, если трек запустился."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001
+            pass
     music = Music({"music": True, "volume": 50})
     print("Проигрыватель:", music.backend_name())
     path = track_path("menu")
@@ -276,6 +281,8 @@ def diagnose() -> int:
 
         time.sleep(1.5)
         print("Состояние MCI:", b.status())
+        code, _ = b._cmd(f"status {ALIAS} position")
+        print("Позиция воспроизведения, мс:", b._cmd(f"status {ALIAS} position")[1], "код:", code)
     music.stop()
     return 1 if music.failed else 0
 
