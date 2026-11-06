@@ -1,0 +1,17 @@
+{
+  "note": "Вся музыка — Kevin MacLeod (incompetech.com), лицензия Creative Commons «С указанием авторства» 4.0: https://creativecommons.org/licenses/by/4.0/. Треки пережаты в моно 64 кбит/с, громкость выровнена, добавлены плавные вступление и затухание.",
+  "tracks": {
+    "menu":       {"title": "Night Vigil",        "author": "Kevin MacLeod", "license": "CC BY 4.0"},
+    "train":      {"title": "Ghost Story",        "author": "Kevin MacLeod", "license": "CC BY 4.0"},
+    "helios":     {"title": "Echoes of Time",     "author": "Kevin MacLeod", "license": "CC BY 4.0"},
+    "orion":      {"title": "Static Motion",      "author": "Kevin MacLeod", "license": "CC BY 4.0"},
+    "institute":  {"title": "Lost Time",          "author": "Kevin MacLeod", "license": "CC BY 4.0"},
+    "bunker":     {"title": "Dark Times",         "author": "Kevin MacLeod", "license": "CC BY 4.0"},
+    "greywood":   {"title": "I Knew a Guy",       "author": "Kevin MacLeod", "license": "CC BY 4.0"},
+    "forest":     {"title": "Lightless Dawn",     "author": "Kevin MacLeod", "license": "CC BY 4.0"},
+    "nightshift": {"title": "Unseen Horrors",     "author": "Kevin MacLeod", "license": "CC BY 4.0"},
+    "dust":       {"title": "Smoking Gun",        "author": "Kevin MacLeod", "license": "CC BY 4.0"},
+    "lighthouse": {"title": "Atlantean Twilight", "author": "Kevin MacLeod", "license": "CC BY 4.0"},
+    "ending":     {"title": "Heartbreaking",      "author": "Kevin MacLeod", "license": "CC BY 4.0"}
+  }
+}

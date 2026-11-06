@@ -17,6 +17,7 @@ from .state import GameState
 from .textutil import resolve, resolve_extras
 
 MAX_ROUTER_DEPTH = 32
+UNDO_DEPTH = 30
 
 NEUTRAL_USE = [
     "Здесь это бесполезно.",
@@ -38,6 +39,7 @@ class Session:
         self.rng = rng or random.Random()
         self.ended: str | None = None
         self.need_describe = True
+        self.history: list[dict] = []
         self._enter_msgs: list[Msg] = []
         if state is None:
             self.state = GameState(scenario_id=scenario.id, node=scenario.start)
@@ -414,6 +416,41 @@ class Session:
         if self.ended:
             return Response([Msg("system", "История окончена.")])
         cmd = parser.parse(line, answer_mode=self.is_input_node())
+        if cmd.kind == "undo":
+            return Response(self.undo())
+        before = self.state.to_dict()
+        resp = self._dispatch(cmd)
+        if self.state.to_dict() != before:
+            self.history.append(before)
+            del self.history[:-UNDO_DEPTH]
+        return resp
+
+    def undo(self) -> list[Msg]:
+        if self.ended:
+            return [Msg("system", "История окончена - отменять нечего.")]
+        if not self.history:
+            return [Msg("system", "Отменять нечего: это самое начало.")]
+        self.state = GameState.from_dict(self.history.pop())
+        self.need_describe = True
+        self._enter_msgs = []
+        return [Msg("system", f"Последнее действие отменено. Можно отменить ещё: {len(self.history)}.")]
+
+    def hud_line(self, width: int = 80) -> str:
+        sc, st = self.scenario, self.state
+        parts = []
+        for name, d in sc.stats_def.items():
+            if d.get("hidden"):
+                continue
+            val = sc.format_stat(name, st.stats.get(name, 0))
+            if d.get("kind") == "stat" and d.get("max"):
+                val = f"{val}/{d['max']}"
+            parts.append(f"{name} {val}")
+        parts.append(f"ход {st.turns}")
+        line = " · ".join(parts)
+        full = f"{sc.title} | {line}"
+        return full if len(full) <= width else line
+
+    def _dispatch(self, cmd) -> Response:
         k = cmd.kind
         if k == "empty":
             return Response([Msg("system", "Введи номер варианта или команду («помощь» - список команд).")])
@@ -467,6 +504,7 @@ HELP_TEXT = """Команды (работают всегда):
   осмотреться              ещё раз описать сцену
   использовать <предмет>   применить предмет в текущей сцене
   статус                   характеристики персонажа
+  отменить                 отменить последнее действие (до 30 шагов назад)
   журнал                   хроника важных событий
   сохранить / загрузить    3 слота сохранения
   помощь                   эта справка
@@ -477,44 +515,99 @@ HELP_TEXT = """Команды (работают всегда):
 «использовать 2». Нажми Enter во время вывода текста, чтобы допечатать его сразу."""
 
 
-def play(session: Session, display, store, scenarios: dict[str, Scenario]) -> None:
+def dsp_width() -> int:
+    from .display import text_width
+
+    return text_width()
+
+
+def _format_minutes(seconds: float) -> str:
+    m = int(seconds // 60)
+    return "меньше минуты" if m < 1 else f"{m} мин."
+
+
+def play(session: Session, display, store, scenarios: dict[str, Scenario], music=None) -> None:
     """Интерактивный цикл. Возвращается в главное меню по выходу/концовке."""
-    while True:
-        if session.need_describe:
-            display.rule()
-            display.show(session.describe())
-            display.show(session.pop_enter_msgs())
-        if session.ended:
-            info = session.ending_info()
-            new = store.add_ending(session.scenario.id, info["id"])
-            display.ending_banner(info, new)
-            if display.confirm("Начать этот сценарий заново? (д/н): "):
-                session = Session(session.scenario)
+    import time
+
+    started = time.monotonic()
+    first = True
+
+    def enter_scenario(sess: Session) -> None:
+        display.set_title(f"Текстовые приключения - {sess.scenario.title}")
+        if music is not None:
+            music.play(sess.scenario.data.get("music"))
+
+    def flush_time() -> None:
+        nonlocal started
+        now = time.monotonic()
+        store.update_stats(play_seconds=now - started)
+        started = now
+
+    enter_scenario(session)
+    try:
+        while True:
+            if session.need_describe:
+                if not first:
+                    display.rule()
+                first = False
+                display.show(session.describe())
+                display.show(session.pop_enter_msgs())
+            if session.ended:
+                info = session.ending_info()
+                new = store.add_ending(session.scenario.id, info["id"])
+                store.clear_autosave()
+                store.update_stats(finished=1)
+                if music is not None:
+                    music.play("ending")
+                display.ending_banner(info, new)
+                found = len([e for e in store.load_achievements().get(session.scenario.id, [])
+                             if e in session.scenario.endings])
+                display.show([Msg("system",
+                                  f"Ходов: {session.state.turns}. Время в этой истории: "
+                                  f"{_format_minutes(time.monotonic() - started)} "
+                                  f"Открыто концовок этой истории: {found}/{info['total']}.")])
+                flush_time()
+                if display.confirm("Начать этот сценарий заново? (д/н): "):
+                    session = Session(session.scenario)
+                    store.update_stats(games=1)
+                    display.clear()
+                    first = True
+                    enter_scenario(session)
+                    continue
+                return
+            store.autosave(session)
+            choices = session.available_choices()
+            display.blank()
+            for n, c in enumerate(choices, 1):
+                display.choice(n, session.choice_label(c))
+            if session.is_input_node():
+                prompt = session.node["input"].get("prompt", "Введи ответ")
+                display.show([Msg("system", f"{prompt} (или номер варианта)")])
+            line = display.ask("> ")
+            if line is None:  # EOF / Ctrl+C
+                if display.confirm("Выйти в главное меню? Прогресс сохранён автоматически (д/н): "):
+                    return
                 continue
-            return
-        choices = session.available_choices()
-        display.blank()
-        for n, c in enumerate(choices, 1):
-            display.choice(n, session.choice_label(c))
-        if session.is_input_node():
-            prompt = session.node["input"].get("prompt", "Введи ответ")
-            display.show([Msg("system", f"{prompt} (или номер варианта)")])
-        line = display.ask("> ")
-        if line is None:  # EOF / Ctrl+C
-            if display.confirm("Выйти в главное меню? Несохранённый прогресс пропадёт (д/н): "):
-                return
-            continue
-        resp = session.handle(line)
-        display.show(resp.msgs)
-        if resp.action == "help":
-            display.show([Msg("plain", HELP_TEXT)], markup=False)
-        elif resp.action == "save":
-            store.save_dialog(session, display)
-        elif resp.action == "load":
-            loaded = store.load_dialog(display, scenarios)
-            if loaded is not None:
-                session = loaded
-        elif resp.action == "exit":
-            if display.confirm("Выйти в главное меню? Несохранённый прогресс пропадёт (д/н): "):
-                return
-            display.show([Msg("system", "Продолжаем.")])
+            resp = session.handle(line)
+            if session.need_describe or session.ended:
+                display.clear()
+                if display.settings.get("clear_screen", True) and display.interactive():
+                    display.hud(session.hud_line(dsp_width()))
+                    first = True
+            display.show(resp.msgs)
+            if resp.action == "help":
+                display.show([Msg("plain", HELP_TEXT)], markup=False)
+            elif resp.action == "save":
+                store.save_dialog(session, display)
+            elif resp.action == "load":
+                loaded = store.load_dialog(display, scenarios)
+                if loaded is not None:
+                    session = loaded
+                    enter_scenario(session)
+            elif resp.action == "exit":
+                if display.confirm("Выйти в главное меню? Прогресс сохранён автоматически (д/н): "):
+                    return
+                display.show([Msg("system", "Продолжаем.")])
+    finally:
+        flush_time()

@@ -16,7 +16,8 @@ from .state import GameState
 
 SLOTS = 3
 SAVE_VERSION = 1
-DEFAULT_SETTINGS = {"speed": "нормально", "colors": True}
+DEFAULT_SETTINGS = {"speed": "нормально", "colors": True, "music": True, "volume": 60, "clear_screen": True}
+VOLUME_STEPS = [25, 50, 75, 100]
 
 
 class SaveError(Exception):
@@ -51,8 +52,8 @@ class Store:
     def slot_path(self, slot: int) -> str:
         return os.path.join(self.dir, f"slot{slot}.json")
 
-    def save(self, slot: int, session) -> None:
-        data = {
+    def _session_data(self, session) -> dict:
+        return {
             "version": SAVE_VERSION,
             "scenario_id": session.scenario.id,
             "scenario_title": session.scenario.title,
@@ -61,13 +62,16 @@ class Store:
             "last_journal": session.state.journal[-1] if session.state.journal else "",
             "state": session.state.to_dict(),
         }
+
+    def save(self, slot: int, session) -> None:
+        data = self._session_data(session)
         try:
             _write_json(self.slot_path(slot), data)
         except OSError as exc:
             raise SaveError(f"не удалось записать файл: {exc}") from exc
 
-    def read_slot(self, slot: int) -> dict:
-        path = self.slot_path(slot)
+    def read_slot(self, slot: int | str) -> dict:
+        path = self.autosave_path() if slot == "auto" else self.slot_path(slot)
         if not os.path.exists(path):
             raise SaveError("слот пуст")
         try:
@@ -89,7 +93,57 @@ class Store:
             return "пусто" if str(exc) == "слот пуст" else f"повреждён: {exc}"
         return f"{d.get('scenario_title', d['scenario_id'])} - ход {d.get('turns', '?')} - {d.get('saved_at', '')}"
 
-    def load_session(self, slot: int, scenarios: dict):
+    # ------------------------------------------------------------ автосохранение
+    def autosave_path(self) -> str:
+        return os.path.join(self.dir, "autosave.json")
+
+    def autosave(self, session) -> None:
+        try:
+            _write_json(self.autosave_path(), self._session_data(session))
+        except OSError:
+            pass
+
+    def clear_autosave(self) -> None:
+        try:
+            os.remove(self.autosave_path())
+        except OSError:
+            pass
+
+    def autosave_summary(self) -> str | None:
+        try:
+            d = self.read_slot("auto")
+        except SaveError:
+            return None
+        return f"{d.get('scenario_title', d['scenario_id'])} - ход {d.get('turns', '?')} - {d.get('saved_at', '')}"
+
+    # ------------------------------------------------------------ статистика
+    def stats_path(self) -> str:
+        return os.path.join(self.dir, "stats.json")
+
+    def load_stats(self) -> dict:
+        stats = {"play_seconds": 0, "games": 0, "finished": 0}
+        try:
+            data = _read_json(self.stats_path())
+            if isinstance(data, dict):
+                for k in stats:
+                    v = data.get(k)
+                    if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0:
+                        stats[k] = int(v)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            pass
+        return stats
+
+    def update_stats(self, play_seconds: float = 0, games: int = 0, finished: int = 0) -> None:
+        stats = self.load_stats()
+        stats["play_seconds"] += int(max(0, play_seconds))
+        stats["games"] += games
+        stats["finished"] += finished
+        try:
+            _write_json(self.stats_path(), stats)
+        except OSError:
+            pass
+
+    def load_session(self, slot: int | str, scenarios: dict):
         from .game import Session
 
         d = self.read_slot(slot)
@@ -185,8 +239,12 @@ class Store:
             if isinstance(data, dict):
                 if data.get("speed") in ("нормально", "быстро", "мгновенно"):
                     settings["speed"] = data["speed"]
-                if isinstance(data.get("colors"), bool):
-                    settings["colors"] = data["colors"]
+                for key in ("colors", "music", "clear_screen"):
+                    if isinstance(data.get(key), bool):
+                        settings[key] = data[key]
+                vol = data.get("volume")
+                if isinstance(vol, int) and not isinstance(vol, bool) and 0 <= vol <= 100:
+                    settings["volume"] = vol
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             pass
         return settings

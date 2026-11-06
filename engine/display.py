@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sys
 import textwrap
 import time
@@ -21,6 +22,17 @@ except Exception:  # noqa: BLE001
     _HAS_COLORAMA = False
 
 WIDTH = 80
+MIN_WIDTH = 40
+
+
+def text_width() -> int:
+    """Ширина текста: не больше 80, но и не шире окна консоли."""
+    try:
+        cols = shutil.get_terminal_size((WIDTH + 1, 24)).columns
+    except (OSError, ValueError):
+        cols = WIDTH + 1
+    return max(MIN_WIDTH, min(WIDTH, cols - 1))
+
 SPEEDS = {"мгновенно": 0.0, "быстро": 0.004, "нормально": 0.014}
 SPEED_ORDER = ["нормально", "быстро", "мгновенно"]
 
@@ -63,8 +75,9 @@ def strip_markup(text: str) -> str:
     return _MARKUP.sub(lambda m: m.group(1) if m.group(1) is not None else m.group(2), text)
 
 
-def wrap(text: str, width: int = WIDTH, indent: str = "", subsequent: str | None = None) -> str:
+def wrap(text: str, width: int | None = None, indent: str = "", subsequent: str | None = None) -> str:
     """Перенос по словам с сохранением абзацев."""
+    width = width or text_width()
     sub = indent if subsequent is None else subsequent
     paras = text.split("\n")
     out = []
@@ -170,7 +183,7 @@ class Display:
                 continue
             if kind == "plain":
                 body = "\n".join(
-                    wrap(line, WIDTH, "", "      ") if len(strip_markup(line)) > WIDTH else line
+                    wrap(line, text_width(), "", "      ") if len(strip_markup(line)) > text_width() else line
                     for line in text.split("\n"))
             elif kind == "title":
                 body = text
@@ -192,17 +205,56 @@ class Display:
         if not self._tail.endswith("\n\n"):
             self._write("\n")
 
+    def interactive(self) -> bool:
+        return hasattr(self.out, "isatty") and self.out.isatty()
+
+    def clear(self) -> None:
+        """Очистить экран (только в настоящей консоли и если включено в настройках)."""
+        if not self.settings.get("clear_screen", True) or not self.interactive():
+            return
+        try:
+            self.out.flush()
+            if os.name == "nt":
+                os.system("cls")
+            else:
+                self._write("\033[2J\033[3J\033[H")
+            self._tail = "\n\n"
+        except Exception:  # noqa: BLE001
+            pass
+
+    def set_title(self, title: str) -> None:
+        try:
+            if os.name == "nt":
+                import ctypes
+
+                ctypes.windll.kernel32.SetConsoleTitleW(title)
+            elif self.interactive():
+                self.out.write(f"\033]0;{title}\007")
+                self.out.flush()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def hud(self, text: str) -> None:
+        """Строка состояния над сценой."""
+        w = text_width()
+        if len(text) > w:
+            text = text[: w - 1] + "…"
+        self._write(self._colorize(text, "system", False) + "\n")
+
+    def pause(self, prompt: str = "Enter - продолжить") -> None:
+        self.ask(self._colorize(prompt, "system", False))
+
     def rule(self) -> None:
-        line = "-" * WIDTH
+        line = "-" * text_width()
         self._write(self._colorize(line, "system", False) + "\n")
 
     def header(self, text: str) -> None:
         self._write("\n" + self._colorize(text, "title", False) + "\n")
-        self._write(self._colorize("=" * min(WIDTH, max(10, len(text))), "system", False) + "\n")
+        self._write(self._colorize("=" * min(text_width(), max(10, len(text))), "system", False) + "\n")
 
     def choice(self, n: int, text: str) -> None:
         prefix = f"  {n}. "
-        body = wrap(text, WIDTH, prefix, " " * len(prefix))
+        body = wrap(text, text_width(), prefix, " " * len(prefix))
         self._write(self._colorize(body, "choice", True) + "\n")
 
     def ask(self, prompt: str = "> ") -> str | None:

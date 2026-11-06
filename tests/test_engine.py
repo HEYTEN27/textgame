@@ -307,11 +307,97 @@ class TestSaves(unittest.TestCase):
         with open(self.store.achievements_path(), "w", encoding="utf-8") as fh:
             fh.write("[[[")
         self.assertEqual(self.store.load_achievements(), {})
-        self.store.save_settings({"speed": "быстро", "colors": False})
-        self.assertEqual(self.store.load_settings(), {"speed": "быстро", "colors": False})
+        self.store.save_settings({"speed": "быстро", "colors": False, "music": False, "volume": 25})
+        st = self.store.load_settings()
+        self.assertEqual((st["speed"], st["colors"], st["music"], st["volume"]), ("быстро", False, False, 25))
+        self.assertTrue(st["clear_screen"])
+        self.store.save_settings({"volume": 500, "music": "да"})
+        st = self.store.load_settings()
+        self.assertEqual((st["volume"], st["music"]), (60, True), "неверные значения отбрасываются")
         with open(self.store.settings_path(), "w", encoding="utf-8") as fh:
             fh.write("oops")
         self.assertEqual(self.store.load_settings()["speed"], "нормально")
+
+
+class TestNewFeatures(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.store = Store(self.dir)
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_undo(self):
+        s = new_session()
+        self.assertIn("начало", s.handle("отменить").msgs[0].text)
+        s.handle("1")  # поднять монету
+        s.handle("1")  # в коридор (монета уже поднята, номера сдвинулись)
+        self.assertEqual(s.node_id, "corridor")
+        s.handle("отменить")
+        self.assertEqual(s.node_id, "hall")
+        self.assertIn("coin", s.state.inventory)
+        s.handle("отмена")
+        self.assertNotIn("coin", s.state.inventory)
+        # команды без изменений состояния не попадают в историю
+        s.handle("и")
+        s.handle("статус")
+        self.assertEqual(len(s.history), 0)
+
+    def test_autosave(self):
+        self.assertIsNone(self.store.autosave_summary())
+        s = new_session()
+        s.choose(1)
+        self.store.autosave(s)
+        self.assertIn("Тестовая комната", self.store.autosave_summary())
+        loaded = self.store.load_session("auto", {"_test": load_test()})
+        self.assertEqual(loaded.state.to_dict(), s.state.to_dict())
+        self.store.clear_autosave()
+        self.assertIsNone(self.store.autosave_summary())
+        with open(self.store.autosave_path(), "w", encoding="utf-8") as fh:
+            fh.write("{битый")
+        self.assertIsNone(self.store.autosave_summary())
+
+    def test_stats(self):
+        self.store.update_stats(play_seconds=125.7, games=1)
+        self.store.update_stats(finished=1)
+        self.assertEqual(self.store.load_stats(), {"play_seconds": 125, "games": 1, "finished": 1})
+        with open(self.store.stats_path(), "w", encoding="utf-8") as fh:
+            fh.write("[]")
+        self.assertEqual(self.store.load_stats()["games"], 0)
+
+    def test_hud(self):
+        line = new_session().hud_line()
+        self.assertIn("здоровье 5/5", line)
+        self.assertNotIn("удача", line)
+
+    def test_music_safe_without_audio(self):
+        from engine import audio
+        old = os.environ.get("TA_NO_AUDIO")
+        os.environ["TA_NO_AUDIO"] = "1"
+        try:
+            m = audio.Music({"music": True, "volume": 50})
+            m.play("menu")
+            m.apply_settings()
+            m.stop()
+            self.assertFalse(m.available)
+        finally:
+            if old is None:
+                os.environ.pop("TA_NO_AUDIO")
+            else:
+                os.environ["TA_NO_AUDIO"] = old
+
+    def test_every_scenario_has_credited_music(self):
+        from engine import audio
+        credits = audio.load_credits()["tracks"]
+        for slug in ("menu", "ending"):
+            self.assertIsNotNone(audio.track_path(slug))
+            self.assertIn(slug, credits)
+        good, _ = load_all()
+        for scen in good:
+            slug = scen.data.get("music")
+            self.assertIsNotNone(audio.track_path(slug), scen.id)
+            self.assertIn(slug, credits, scen.id)
+            self.assertIn("Kevin MacLeod", audio.credit_line(slug))
 
 
 class TestLoaderAndDisplay(unittest.TestCase):

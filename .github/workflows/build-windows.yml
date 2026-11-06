@@ -22,7 +22,13 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Тесты
+        env:
+          TA_NO_AUDIO: "1"
         run: python -m unittest discover -s tests
+
+      - name: Проверка звука (MCI)
+        continue-on-error: true
+        run: python -m engine.audio
 
       - name: Валидатор сценариев
         run: python tools/validate.py
@@ -36,7 +42,7 @@ jobs:
       - name: Проверка запуска exe
         shell: pwsh
         run: |
-          "5" | .\dist\TextAdventure.exe
+          "6" | .\dist\TextAdventure.exe
           if ($LASTEXITCODE -ne 0) { throw "exe завершился с кодом $LASTEXITCODE" }
           if (-not (Test-Path .\dist\saves)) { throw "папка saves не создана рядом с exe" }
           Remove-Item -Recurse -Force .\dist\saves
@@ -55,3 +61,4 @@ jobs:
           body: |
             Готовый exe для Windows 10/11. Скачайте TextAdventure.exe и запустите двойным щелчком.
             Сохранения появятся в папке saves рядом с exe.
+            Музыка: Kevin MacLeod (incompetech.com), CC BY 4.0 — полный список в CREDITS.md.

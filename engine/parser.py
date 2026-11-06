@@ -18,6 +18,7 @@ COMMANDS: dict[str, list[str]] = {
     "load": ["загрузить", "загр", "загрузиться", "load"],
     "help": ["помощь", "справка", "команды", "help", "?", "п"],
     "exit": ["выход", "выйти", "quit", "exit", "меню"],
+    "undo": ["отменить", "отмена", "отменить ход", "откат", "undo"],
     "look": ["осмотреться", "оглядеться", "смотреть", "описание", "где", "л"],
 }
 VERBS: dict[str, list[str]] = {
@@ -32,7 +33,7 @@ STOP_WORDS = {"на", "в", "во", "с", "со", "к", "ко", "у", "из", "�
 
 @dataclass
 class Command:
-    kind: str          # choice, inventory, status, journal, save, load, help, exit,
+    kind: str          # choice, undo, inventory, status, journal, save, load, help, exit,
                        # look, examine, use, answer, empty, unknown
     arg: str = ""
     number: int = 0
@@ -138,6 +139,8 @@ def parse(line: str, *, answer_mode: bool = False) -> Command:
         return Command("choice", number=int(m.group(1)))
     parts = text.split(" ", 1)
     head, rest = parts[0], (parts[1] if len(parts) > 1 else "")
+    if text in COMMANDS["undo"]:
+        return Command("undo")
     if not rest:
         kind = _match_command(head, COMMANDS)
         if kind:
